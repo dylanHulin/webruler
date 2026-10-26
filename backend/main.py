@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from analyzer import analyze_web_content
 
 app = FastAPI(title="WebRuler API", version="1.0.0")
 
@@ -17,21 +18,12 @@ class AuditRequest(BaseModel):
 
 @app.post("/api/audit")
 async def audit_url(data: AuditRequest):
-    # Point d'entrée pour l'analyse des modèles Meta / RGAA
     if not data.url:
-        raise HTTPException(status_code=400, dispatcher="URL is required")
+        raise HTTPException(status_code=400, detail="URL is required")
     
-    # Simulation de la structure de réponse en attendant d'brancher l'inférence
-    return {
-        "url": data.url,
-        "status": "success",
-        "violations_found": 3,
-        "details": [
-            {"element": "<img>", "issue": "Missing alt text (WCAG 1.1.1)", "fix": "alt=\"Description explicite\""},
-            {"element": "<button>", "issue": "Insufficient color contrast (WCAG 1.4.3)", "fix": "color: #FFFFFF; background-color: #0056b3;"},
-            {"element": "<h1>", "issue": "Heading hierarchy skipped", "fix": "Ensure sequential heading order"}
-        ]
-    }
+    # Trigger the Llama-powered accessibility analysis engine
+    result = analyze_web_content(url=data.url)
+    return result
 
 if __name__ == "__main__":
     import uvicorn
