@@ -2,8 +2,11 @@ import os
 import json
 import requests
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
-META_API_URL = "https://api.meta.ai/v1/responses"
+load_dotenv()
+
+META_API_URL = os.getenv("MUSE_API_URL", "https://api.meta.ai/v1/responses")
 MODEL_NAME = "muse-spark-1.3"  # Tu peux aussi tester "muse-wonder-1.0" selon tes préférences
 
 def fetch_page_content(url: str) -> str:
