@@ -3,7 +3,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
-MUSE_API_URL = "https://api.muse.meta.com/v1/chat/completions"
+MUSE_API_URL = os.getenv("MUSE_API_URL", "https://api.muse.meta.com/v1/chat/completions")
 MODEL_NAME = "muse-spark-1.3"
 
 def fetch_page_content(url: str) -> str:
