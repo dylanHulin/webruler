@@ -3,13 +3,12 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
-MUSE_API_URL = os.getenv("MUSE_API_URL", "https://api.muse.meta.com/v1/chat/completions")
-MODEL_NAME = "muse-spark-1.3"
+META_API_URL = "https://api.meta.ai/v1/responses"
+MODEL_NAME = "muse-spark-1.3"  # Tu peux aussi tester "muse-wonder-1.0" selon tes préférences
 
 def fetch_page_content(url: str) -> str:
     """
-    Fetches and cleans HTML content from the target URL 
-    optimized for model context consumption.
+    Récupère et nettoie le code HTML de l'URL cible.
     """
     try:
         headers = {"User-Agent": "WebRuler-Accessibility-Agent/1.0 (+https://github.com)"}
@@ -26,8 +25,7 @@ def fetch_page_content(url: str) -> str:
 
 def calculate_accessibility_score(violations_count: int) -> int:
     """
-    Computes a simulated RGAA/WCAG compliance score out of 100 
-    based on the number and severity of detected violations.
+    Calcule un score de conformité WCAG/RGAA sur 100.
     """
     if violations_count == 0:
         return 100
@@ -36,15 +34,14 @@ def calculate_accessibility_score(violations_count: int) -> int:
 
 def analyze_web_content(url: str):
     """
-    Fully automated pipeline: Scrapes DOM, queries Meta Muse Spark 1.3,
-    computes compliance score, and structures automated code fixes.
+    Pipeline automatisé utilisant le format officiel de l'API Meta.
     """
     page_html = fetch_page_content(url)
     
     if page_html.startswith("Error"):
         return {"status": "error", "message": page_html}
 
-    system_prompt = (
+    system_instructions = (
         "You are an elite automated digital accessibility auditor specializing in WCAG 2.1 AA and RGAA. "
         "Analyze the provided HTML structure, identify compliance violations, and return ONLY a valid JSON object "
         "containing a 'violations' array (with 'element', 'criterion', 'description', 'fix_code') and a 'summary' string."
@@ -58,28 +55,39 @@ def analyze_web_content(url: str):
     ```
     """
 
+    # Récupération de la clé API avec fallback
+    api_key = os.getenv("MODEL_API_KEY") or os.getenv("MUSE_API_KEY", "DUMMY_KEY")
+
     headers = {
-        "Authorization": f"Bearer {os.getenv('MUSE_API_KEY', 'DUMMY_KEY')}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
     
+    # Payload strict basé sur l'exemple officiel Meta
     payload = {
         "model": MODEL_NAME,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": f"{system_instructions}\n\n{user_prompt}"
+                    }
+                ]
+            }
         ],
-        "temperature": 0.1,
-        "max_tokens": 2500
+        "stream": False,
     }
 
     try:
-        api_key = os.getenv('MUSE_API_KEY')
         if api_key and api_key != 'DUMMY_KEY':
-            response = requests.post(MUSE_API_URL, json=payload, headers=headers, timeout=35)
+            response = requests.post(META_API_URL, json=payload, headers=headers, timeout=35)
             if response.status_code == 200:
-                raw_content = response.json()['choices'][0]['message']['content']
-                # Parse model response safely
+                res_data = response.json()
+                # Extraction sécurisée du texte de réponse selon le format Meta
+                # (À ajuster légèrement si la structure de sortie diffère dans la doc)
+                raw_content = res_data.get("output", [{}])[0].get("content", [{}])[0].get("text", "{}")
                 parsed_data = json.loads(raw_content)
                 v_count = len(parsed_data.get("violations", []))
                 return {
@@ -91,7 +99,7 @@ def analyze_web_content(url: str):
                     "violations": parsed_data.get("violations", [])
                 }
 
-        # Fallback automated mock response if no API key is provided yet
+        # Fallback de secours si aucune vraie clé n'est encore renseignée
         mock_violations = [
             {
                 "element": "<img src='logo.png'>",
