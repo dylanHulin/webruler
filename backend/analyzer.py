@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from bs4 import BeautifulSoup
 
@@ -8,53 +9,53 @@ MODEL_NAME = "muse-spark-1.3"
 def fetch_page_content(url: str) -> str:
     """
     Fetches and cleans HTML content from the target URL 
-    to fit within the model's token context window.
+    optimized for model context consumption.
     """
     try:
         headers = {"User-Agent": "WebRuler-Accessibility-Agent/1.0 (+https://github.com)"}
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=12)
         response.raise_for_status()
         
-        # Parse HTML and remove noise (scripts, styles, etc.)
         soup = BeautifulSoup(response.text, 'html.parser')
         for script in soup(["script", "style", "noscript", "iframe"]):
             script.extract()
             
-        # Return cleaned prettified HTML truncated to a safe length
-        return soup.prettify()[:15000]
+        return soup.prettify()[:20000]
     except Exception as e:
         return f"Error fetching URL content: {str(e)}"
 
-def analyze_web_content(url: str, html_content: str = None):
+def calculate_accessibility_score(violations_count: int) -> int:
     """
-    Fetches real webpage code and analyzes it using Muse Spark 1.3
-    for WCAG/RGAA accessibility violations and precise code patches.
+    Computes a simulated RGAA/WCAG compliance score out of 100 
+    based on the number and severity of detected violations.
     """
-    # Fetch real HTML code from the URL if not provided explicitly
-    page_html = html_content or fetch_page_content(url)
+    if violations_count == 0:
+        return 100
+    score = 100 - (violations_count * 15)
+    return max(score, 10)
+
+def analyze_web_content(url: str):
+    """
+    Fully automated pipeline: Scrapes DOM, queries Meta Muse Spark 1.3,
+    computes compliance score, and structures automated code fixes.
+    """
+    page_html = fetch_page_content(url)
     
+    if page_html.startswith("Error"):
+        return {"status": "error", "message": page_html}
+
     system_prompt = (
-        "You are a world-class digital accessibility expert specializing in WCAG 2.1 (AA level) and RGAA standards. "
-        "Your goal is to detect web accessibility violations from the provided HTML structure and provide exact, production-ready code fixes."
+        "You are an elite automated digital accessibility auditor specializing in WCAG 2.1 AA and RGAA. "
+        "Analyze the provided HTML structure, identify compliance violations, and return ONLY a valid JSON object "
+        "containing a 'violations' array (with 'element', 'criterion', 'description', 'fix_code') and a 'summary' string."
     )
     
     user_prompt = f"""
-    Analyze the following target URL and its HTML structure:
-    URL: {url}
-    
-    HTML Content:
+    Target URL: {url}
+    HTML Code:
     ```html
     {page_html}
     ```
-    
-    Identify real accessibility errors (such as missing alt attributes, incorrect heading hierarchy, missing ARIA roles, contrast issues, or keyboard navigation problems).
-    For each detected violation, provide:
-    1. The faulty HTML element found in the code.
-    2. The exact WCAG compliance criterion violated.
-    3. A clear description of the issue.
-    4. The exact corrected code snippet ready for deployment.
-    
-    Respond in a clean, structured JSON format with a root object containing a 'violations' array.
     """
 
     headers = {
@@ -68,38 +69,52 @@ def analyze_web_content(url: str, html_content: str = None):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "temperature": 0.2,
-        "max_tokens": 2000
+        "temperature": 0.1,
+        "max_tokens": 2500
     }
 
     try:
-        # Real API call if API key is configured
         api_key = os.getenv('MUSE_API_KEY')
         if api_key and api_key != 'DUMMY_KEY':
-            response = requests.post(MUSE_API_URL, json=payload, headers=headers, timeout=30)
+            response = requests.post(MUSE_API_URL, json=payload, headers=headers, timeout=35)
             if response.status_code == 200:
-                return response.json()
+                raw_content = response.json()['choices'][0]['message']['content']
+                # Parse model response safely
+                parsed_data = json.loads(raw_content)
+                v_count = len(parsed_data.get("violations", []))
+                return {
+                    "status": "success",
+                    "model_used": MODEL_NAME,
+                    "target_url": url,
+                    "compliance_score": calculate_accessibility_score(v_count),
+                    "violations_found": v_count,
+                    "violations": parsed_data.get("violations", [])
+                }
+
+        # Fallback automated mock response if no API key is provided yet
+        mock_violations = [
+            {
+                "element": "<img src='logo.png'>",
+                "criterion": "WCAG 1.1.1 - Non-text Content",
+                "description": "Image is missing an alternative description text.",
+                "fix_code": "<img src='logo.png' alt='WebRuler company official logo'>"
+            },
+            {
+                "element": "<input type='text' name='email'>",
+                "criterion": "WCAG 3.3.2 - Labels or Instructions",
+                "description": "Form input field lacks an explicit associated <label> element.",
+                "fix_code": "<label for='email'>Email Address</label>\n<input type='text' id='email' name='email'>"
+            }
+        ]
         
-        # Fallback Mocked Response for local testing
         return {
             "status": "success",
             "model_used": MODEL_NAME,
             "target_url": url,
-            "violations_found": 2,
-            "violations": [
-                {
-                    "element": "<img src='hero-banner.jpg'>",
-                    "criterion": "WCAG 1.1.1 - Non-text Content",
-                    "description": f"The image element fetched from {url} lacks a descriptive alt attribute.",
-                    "fix_code": "<img src='hero-banner.jpg' alt='WebRuler platform presentation and live auditing dashboard'>"
-                },
-                {
-                    "element": "<button class='cta-btn'>Click Here</button>",
-                    "criterion": "WCAG 2.4.4 - Link Purpose (In Context)",
-                    "description": "Ambiguous button text ('Click Here') does not describe its specific action out of context.",
-                    "fix_code": "<button class='cta-btn' aria-label='Start free accessibility audit'>Start Free Audit</button>"
-                }
-            ]
+            "compliance_score": calculate_accessibility_score(len(mock_violations)),
+            "violations_found": len(mock_violations),
+            "violations": mock_violations
         }
+        
     except Exception as e:
         return {"status": "error", "message": str(e)}
